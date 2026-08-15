@@ -1,4 +1,4 @@
-# ZeroScript Free - AI Roblox Studio Agent (ChatGPT, DeepSeek, Gemini, Kimi, GLM, Qwen, Arena, Meta AI)
+# ZeroXScript Free - AI Roblox Studio Agent (ChatGPT, DeepSeek, Gemini, Kimi, GLM, Qwen, Arena, Meta AI)
 
 Control Roblox Studio with AI, for free. ZeroScript turns a normal AI chat (ChatGPT, DeepSeek, Google Gemini, Kimi, GLM, Qwen, Arena, or Meta AI) into an agent that builds and scripts your Roblox game for you: just describe what you want, and it reads/edits scripts, runs Luau, inspects the game tree, and generates assets directly in Roblox Studio. No API key, no terminal, no coding required.
 
@@ -10,7 +10,7 @@ It's a Chrome/Edge browser extension plus a small local bridge that connects the
 1. Go to `edge://extensions` (Edge) or `chrome://extensions` (Chrome)
 2. Enable **Developer mode** (top right toggle)
 3. Click **Load unpacked**
-4. Select the `zeroscript-extension` folder
+4. Select the `zeroxscript-extension` folder
 5. The extension is now active
 
 **Then set up the Bridge:**
