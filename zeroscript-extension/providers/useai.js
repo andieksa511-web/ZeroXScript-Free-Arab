@@ -185,21 +185,18 @@ const ZSProvider = (() => {
   function barMount(){
     const ed = getEditor();
     if(!ed) return null;
-    // دور على الحاوية اللي فيها المربع والزر
     let frame = composerFrame();
-    if(!frame) frame = ed.parentElement;
+    if(!frame) frame = ed.closest('form') || ed.parentElement;
     if(!frame) return null;
-
-    // لو الحاوية هي نفسها textarea، اطلع واحد لفوق
-    if(frame===ed) frame = frame.parentElement;
-
-    // حاول تحط الشريط فوق المربع مباشرة، مو داخله عشان ما ينحجب
-    let parent = frame;
-    // اذا parent هو form، حط الشريط كأول child في الفورم
-    let before = parent.firstElementChild;
-    // تجنب انك تحط الشريط قبل نفسه
-    if(before && before.id==="zs-bar") before = before.nextElementSibling;
-    return { parent, before, inside: true }; // نفس شكل DeepSeek - داخل مربع الكتابة
+    // نرفع الشريط فوق الفريم كامل - ما نغطي مكان الكتابة
+    let parent = frame.parentElement;
+    if(!parent) parent = frame;
+    // نحط الشريط قبل الفريم مباشرة
+    let before = frame;
+    // لو الـ parent هو نفسه اللي فيه الشريط القديم، تأكد ما نحط الشريط قبل نفسه
+    if(before && before.id==="zs-bar") before = before.nextElementSibling || null;
+    // inside:false = يطلع كرت فوق، ما يدخل داخل مربع الكتابة ولا يخربه
+    return { parent, before, inside: false };
   }
 
   function setInputLock(on){
@@ -218,23 +215,43 @@ const ZSProvider = (() => {
   async function typeAndSend(text, images){
     const editor = getEditor();
     if(!editor) throw new Error("Use.AI input box not found - جرب تحدث الصفحة");
-    editor.focus();
-    setTextareaValue(editor, text);
-    await sleep(200);
-    // دور على زر الارسال
-    let btn = document.querySelector(S.sendBtn);
-    // لو ما لقيته، دور داخل الفريم
-    if(!btn){
-      const frame = composerFrame();
-      btn = frame ? frame.querySelector('button') : null;
+    // لا نعدل ولا نخرب الـ DOM حق الموقع
+    try { editor.focus(); } catch {}
+    // كتابة نظيفة
+    if(editor.tagName==="TEXTAREA" || editor.tagName==="INPUT"){
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(editor),"value")?.set;
+      const protoSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")?.set;
+      const s = setter || protoSetter;
+      if(s) s.call(editor, text);
+      else editor.value = text;
+      editor.dispatchEvent(new Event("input",{bubbles:true}));
+      editor.dispatchEvent(new Event("change",{bubbles:true}));
+    } else {
+      // contenteditable - بدون ما نخرب الـ ProseMirror
+      try{
+        document.execCommand('selectAll', false, null);
+        document.execCommand('insertText', false, text);
+      }catch{
+        editor.textContent = text;
+        editor.dispatchEvent(new InputEvent("input",{bubbles:true, data:text}));
+      }
     }
-    if(btn){
+    await sleep(250);
+    // دور زر الارسال - ندور فقط داخل الفريم عشان ما نضغط زر ثاني بالغلط
+    const frame = composerFrame();
+    let btn = null;
+    if(frame){
+      btn = [...frame.querySelectorAll('button[type="submit"], button[data-testid="send-button"]')].find(b=> b.offsetParent!==null) || null;
+    }
+    if(!btn) btn = document.querySelector(S.sendBtn);
+    if(btn && btn.offsetParent!==null){
       btn.click();
-    }else{
-      // fallback: Enter
-      editor.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",code:"Enter",bubbles:true}));
-      editor.dispatchEvent(new KeyboardEvent("keyup",{key:"Enter",code:"Enter",bubbles:true}));
+      return true;
     }
+    // fallback: Enter (بدون Shift)
+    editor.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",code:"Enter",keyCode:13,bubbles:true}));
+    editor.dispatchEvent(new KeyboardEvent("keypress",{key:"Enter",code:"Enter",keyCode:13,bubbles:true}));
+    editor.dispatchEvent(new KeyboardEvent("keyup",{key:"Enter",code:"Enter",keyCode:13,bubbles:true}));
     return true;
   }
 
@@ -332,7 +349,7 @@ const ZSProvider = (() => {
     get supportsVision(){ return true; },
     timings,
     thinkingSel: S.thinking,
-    init({diag:d}={}){ if(d) diag=d; try{document.documentElement.setAttribute("data-zs-useai-ver","2026-08_useai_fix_v3_final");}catch{} },
+    init({diag:d}={}){ if(d) diag=d; try{document.documentElement.setAttribute("data-zs-useai-ver","2026-08_useai_fix_v4_lifted");}catch{} },
     allItems, isUserItem, isAssistantItem, itemText, classifyText,
     assistantCount, userCount, lastAssistant, lastAssistantId, itemKey, readAssistant,
     streamLen, snapshot,
