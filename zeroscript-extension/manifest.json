@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "ZeroScript Free × Roblox Studio Agent",
+  "name": "ZeroXScript Free × Roblox Studio Agent",
   "version": "1.5.2",
   "description": "Turn ChatGPT, DeepSeek, Gemini, Kimi, GLM, Qwen, Arena or Meta AI into a Roblox Studio agent that drives Studio through a local bridge.",
   "permissions": ["storage"],
@@ -30,7 +30,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "ZeroScript Free",
+    "default_title": "ZeroXScript Free",
     "default_icon": {
       "16": "icon.png",
       "48": "icon.png",
