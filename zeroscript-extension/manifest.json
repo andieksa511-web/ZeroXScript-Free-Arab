@@ -17,9 +17,9 @@
     "https://arena.ai/*",
     "https://www.meta.ai/*",
     "https://meta.ai/*",
-     "https://www.use.ai/*",
      "https://use.ai/*",
-    "http://127.0.0.1/*",
+    "https://*.use.ai/*"
+    "https://127.0.0.1/*",
     "ws://127.0.0.1/*"
   ],
   "background": {
