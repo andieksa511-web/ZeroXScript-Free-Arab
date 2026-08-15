@@ -53,7 +53,7 @@ const ZS = (() => {
       const objAlt = otherCmd ? "" : " (or ###...### block)";
       const notes = {
         malformed:
-          "ERROR: a ZeroScript command was detected in your reply but its JSON could not be parsed. " +
+          "ERROR: a ZeroXScript command was detected in your reply but its JSON could not be parsed. " +
           'Rewrite it as a single valid JSON object in plain text, exactly like {"command": "name", "params": {...}}' +
           luaMalformed + ". You may add a short note around it. " +
           "Please retry.",
