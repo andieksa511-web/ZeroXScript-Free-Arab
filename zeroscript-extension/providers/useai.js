@@ -1,44 +1,39 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// providers/useai.js - Use.AI fixed v2 - خفيف وما يعلق
-// تم حل مشكلة التعليق ومشكلة اختفاء شريط الكتابة
-
+// providers/useai.js - Use.AI (use.ai / app.use.ai) provider - UNIVERSAL FIX
+// مبني على deepseek.js لكن selectors عامة + دعم contenteditable + barMount قوي
 const ZSProvider = (() => {
   "use strict";
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let diag = () => {};
 
-  // selectors دقيقة لـ use.ai - ما نستخدم [class*="message"] العام لأنه يعلق الموقع
   const S = {
-    // الحاوية الرئيسية للشات - ندور داخلها فقط عشان ما نعلق الصفحة
-    chatRoot: 'main, [role="main"], #__next, [class*="conversation"]',
-    chatItem: '[data-testid="conversation-turn"], [data-message-author-role], [data-testid="message"], [data-message-id]',
+    // عام - يغطي كل اشكال الشات الحديثة
+    chatItem: '[data-message-id], [data-message-author-role], [data-testid*="message"], [data-message], .group.w-full, [class*="message"], article',
     userMod: '',
     userBubble: '[data-message-author-role="user"]',
-    box: '.markdown, .prose, [data-message-author-role="assistant"]',
-    editor: 'textarea[placeholder], textarea[data-id="root"], form textarea, #prompt-textarea, div[contenteditable="true"]',
-    thinking: '[class*="think"], [class*="reasoning"]',
-    markdown: '.markdown, .prose, [class*="markdown"]',
-    generating: '[class*="loading"], [aria-label*="Stop"], button[data-testid="stop-button"]',
-    sendBtn: 'button[data-testid="send-button"], button[type="submit"], form button:has(svg)',
-    stopBtn: 'button[data-testid="stop-button"], button[aria-label*="Stop"]',
-    errorSurfaces: '[class*="toast"], [role="alert"]',
-    attachArea: '[class*="file"]',
-    imageThumb: 'img',
+    box: '.markdown, .prose, [class*="markdown"], [data-message-author-role="assistant"]',
+    // اهم شي - يدور على كل انواع مربع الكتابة
+    editor: 'textarea, div[contenteditable="true"], [contenteditable="true"], [role="textbox"], #prompt-textarea, [data-testid*="composer"] textarea, [data-testid*="input"]',
+    msgEditBox: '[data-editing="true"], .ds-textarea',
+    thinking: '[class*="think"], [class*="reasoning"], [data-thinking="true"]',
+    markdown: '.markdown, .prose, [class*="markdown"], [class*="content"], [data-message-author-role="assistant"]',
+    generating: '[class*="loading"], [class*="generating"], [aria-label*="Stop"], [data-testid="stop-button"]',
+    sendBtn: 'button[type="submit"], button[data-testid="send-button"], button[aria-label*="Send"], button:has(svg), form button',
+    stopBtn: 'button[data-testid="stop-button"], button[aria-label*="Stop"], button:has([class*="stop"])',
+    errorSurfaces: '[class*="toast"],[class*="error"],[class*="alert"],[role="alert"]',
+    attachArea: "[class*='file-preview'], [class*='upload'], input[type='file']",
+    imageThumb: "[class*='thumbnail'], [class*='file-item']",
     modeRadioGroup: '[role="radiogroup"]',
     modeRadio: '[role="radio"]',
-    deepThinkToggle: '[class*="think"]',
+    deepThinkToggle: ".ds-toggle-button",
   };
 
   const RE = {
-    contextLimit: /too long|context limit|token limit/i,
+    contextLimit: new RegExp(["conversation.{0,20}(too long)","context.{0,20}(limit|exceeded)","session.{0,20}expired","token.{0,10}limit"].join("|"),"i"),
     tooLong: /too long/i,
-    busy: /busy|try again/i,
-    continueBtn: /^(continue|continuer)$/i,
-    stopped: /stopped|stopping/i,
-    expertMode: /expert/i,
-    visionMode: /vision/i,
-    deepThink: /deep ?think|r1/i,
-    searchMode: /search/i,
+    busy: /server is busy|please try again|system is currently busy/i,
+    continueBtn: /^(continue|continuer|继续|fortfahren|continuar)$/i,
+    stopped: /stopped|已停止/i,
   };
 
   const timings = {
@@ -50,195 +45,281 @@ const ZSProvider = (() => {
     RESPONSE_TIMEOUT_MS: 300000,
   };
 
-  // cache عشان ما نعلق الموقع كل 50ms
-  let _cacheItems = [];
-  let _cacheTime = 0;
-  function qAll(sel) { try { return [...document.querySelectorAll(sel)]; } catch { return []; } }
-  function getChatRoot() {
-    return document.querySelector(S.chatRoot) || document.body;
-  }
-  function allItems() {
-    const now = Date.now();
-    if (now - _cacheTime < 400 && _cacheItems.length) return _cacheItems;
-    const root = getChatRoot();
-    let items = [];
-    for (const sel of S.chatItem.split(',').map(s=>s.trim()).filter(Boolean)) {
-      try {
-        const found = [...root.querySelectorAll(sel)];
-        if (found.length > 2) { items = found; break; }
-      } catch {}
-    }
-    // fallback: لو ما لقينا شي، ندور بطريقة ثانية بس محدودة
-    if (!items.length) {
-      const maybe = [...root.querySelectorAll('div[data-message-author-role]')];
-      if (maybe.length) items = maybe;
-    }
-    _cacheItems = items;
-    _cacheTime = now;
-    return items;
+  // --- helpers ---
+  function visible(el){
+    if(!el) return false;
+    const r = el.getBoundingClientRect();
+    return r.width>0 && r.height>0 && el.offsetParent!==null;
   }
 
-  function isUserItem(item) {
-    if (!item) return false;
-    const role = item.getAttribute && item.getAttribute('data-message-author-role');
-    if (role === 'user') return true;
-    if (item.querySelector && item.querySelector('[data-message-author-role="user"]')) return true;
-    // fallback: اذا فيه كلاس user
-    if (item.matches && item.matches('[data-message-author-role="user"]')) return true;
+  // اقوى getEditor - يدور على كل الصفحة ويختار اللي تحت
+  const getEditor = () => {
+    const all = [...document.querySelectorAll(S.editor)].filter(e => !e.closest("#zs-root") && !e.closest("#zs-bar"));
+    if(!all.length) return null;
+    // فلتر المرئي فقط
+    let vis = all.filter(visible);
+    if(!vis.length) vis = all;
+    // فضل textarea او contenteditable اللي قريب من الاسفل
+    vis.sort((a,b)=>{
+      const ra = a.getBoundingClientRect();
+      const rb = b.getBoundingClientRect();
+      return rb.bottom - ra.bottom; // اللي تحت اكثر اول
+    });
+    // فضل اللي عنده placeholder او id معروف
+    const preferred = vis.find(e=> e.id==="prompt-textarea" || e.getAttribute("placeholder") || e.getAttribute("data-testid"));
+    return preferred || vis[0] || null;
+  };
+
+  const editorText = () => {
+    const e = getEditor();
+    if(!e) return "";
+    if(e.tagName==="TEXTAREA" || e.tagName==="INPUT") return e.value||"";
+    // contenteditable
+    return e.textContent || e.innerText || "";
+  };
+
+  function setTextareaValue(el, text){
+    if(!el) return;
+    el.focus();
+    if(el.tagName==="TEXTAREA" || el.tagName==="INPUT"){
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),"value")?.set;
+      const protoSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")?.set;
+      const s = setter || protoSetter;
+      if(s) s.call(el, text);
+      else el.value = text;
+      el.dispatchEvent(new Event("input",{bubbles:true}));
+      el.dispatchEvent(new Event("change",{bubbles:true}));
+    } else {
+      // contenteditable - ProseMirror / generic
+      // طريقة 1: execCommand
+      try{
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        document.execCommand("selectAll",false,null);
+        document.execCommand("insertText",false,text);
+      }catch{}
+      // fallback
+      if((el.textContent||"").trim() !== text.trim()){
+        el.textContent = text;
+      }
+      el.dispatchEvent(new InputEvent("input",{bubbles:true, data:text}));
+      el.dispatchEvent(new Event("input",{bubbles:true}));
+    }
+  }
+
+  // --- turns ---
+  const allItems = () => {
+    const nodes = [...document.querySelectorAll(S.chatItem)];
+    // فلتر - شيل اللي فاضي او داخل الشريط
+    return nodes.filter(n=> !n.closest("#zs-root") && !n.closest("#zs-bar") && (n.textContent||"").trim().length>0);
+  };
+  const isUserItem = (item) => {
+    if(!item) return false;
+    const role = item.getAttribute("data-message-author-role") || item.getAttribute("data-role") || item.getAttribute("data-author");
+    if(role==="user") return true;
+    if(item.querySelector('[data-message-author-role="user"]')) return true;
+    // heuristic: if class contains user
+    const cls = (item.className||"").toLowerCase();
+    if(cls.includes("user") && !cls.includes("assistant")) return true;
     return false;
-  }
+  };
   const isAssistantItem = (item) => !!item && !isUserItem(item);
-
-  function itemText(item) {
-    if (!item) return "";
-    if (isAssistantItem(item)) {
-      const mds = [...item.querySelectorAll(S.markdown)].filter(m => !m.closest(S.thinking));
-      if (mds.length) return mds.map(m => m.textContent).join("\n");
-    }
-    return item.textContent || "";
+  function itemText(item){
+    if(!item) return "";
+    const mds = [...item.querySelectorAll(S.markdown)].filter(m=> !m.closest(S.thinking));
+    if(mds.length) return mds.map(m=> m.textContent).join("\n");
+    return item.textContent||"";
   }
-  function classifyText(item, excludeSel) {
+  function classifyText(item, excludeSel){
+    if(isAssistantItem(item)){
+      return [...item.querySelectorAll(S.markdown)]
+        .filter(m=> !m.closest(S.thinking) && !(excludeSel && m.closest(excludeSel)))
+        .map(m=> m.textContent).join("\n");
+    }
+    return item.textContent||"";
+  }
+  const assistantItems = () => allItems().filter(isAssistantItem);
+  const assistantCount = () => assistantItems().length;
+  const userCount = () => allItems().filter(isUserItem).length;
+  const lastAssistant = () => {
+    const it = assistantItems();
+    return it.length ? it[it.length-1] : null;
+  };
+  function itemKey(item){
+    if(!item) return null;
+    return item.getAttribute("data-message-id") || item.getAttribute("data-message-author-role") || null;
+  }
+  function lastAssistantId(){
+    const last = lastAssistant();
+    return itemKey(last);
+  }
+  function readAssistant(item){
     return itemText(item);
   }
-
-  function assistantCount() { return allItems().filter(isAssistantItem).length; }
-  function userCount() { return allItems().filter(isUserItem).length; }
-  function lastAssistant() { const a = allItems().filter(isAssistantItem); return a[a.length-1] || null; }
-  function lastAssistantId() { const la = lastAssistant(); return la ? (la.getAttribute('data-message-id') || '') : ''; }
-  function itemKey(item) { return item.getAttribute && (item.getAttribute('data-message-id') || '') || (item.textContent||'').slice(0,80); }
-  function readAssistant(item) { return itemText(item); }
-  function streamLen(item) { return (itemText(item)||'').length; }
-  function snapshot(item) { return itemText(item); }
-
-  // editor - ندور اخر textarea ظاهر في الصفحة (مهم عشان ما نعلق)
-  let _editorCache = null;
-  let _editorCacheTime = 0;
-  function getEditor() {
-    const now = Date.now();
-    if (_editorCache && (now - _editorCacheTime < 1000) && document.contains(_editorCache)) return _editorCache;
-    const all = qAll(S.editor);
-    // اخر واحد ظاهر ومو مخفي
-    for (let i = all.length-1; i >=0; i--) {
-      const el = all[i];
-      if (!el) continue;
-      if (el.offsetParent === null) continue; // مخفي
-      if (el.disabled) continue;
-      // نتأكد انه قريب من اسفل الصفحة (الكومبوزر)
-      const rect = el.getBoundingClientRect();
-      if (rect.top < 100) continue; // فوق مره = مو هو
-      _editorCache = el;
-      _editorCacheTime = now;
-      return el;
-    }
-    return all[all.length-1] || null;
+  function streamLen(item){
+    return (itemText(item)||"").length;
   }
-  function editorText() { const ed = getEditor(); if (!ed) return ''; return ed.value !== undefined ? ed.value : ed.textContent||''; }
-  function chatIsEmpty() { return allItems().length === 0; }
-  function isFreshChat() { return chatIsEmpty(); }
-  function composerFrame() { const ed = getEditor(); return ed ? (ed.closest('form') || ed.parentElement) : null; }
-  function barMount() {
-    const ed = getEditor();
-    if (!ed) return null;
-    // اهم شي: نرجع الحاوية اللي فوق الفورم مباشرة، مو نفس الفورم عشان ما نغطي الكتابة
-    const form = ed.closest('form');
-    if (form && form.parentElement) return form.parentElement;
-    // fallback: parent مباشر
-    return ed.parentElement ? ed.parentElement.parentElement || ed.parentElement : null;
+  function snapshot(){
+    return { url: location.href, items: allItems().length };
   }
-  function setInputLock(locked) { const ed = getEditor(); if (ed) ed.disabled = !!locked; }
+  const chatIsEmpty = () => allItems().length===0;
+  const isFreshChat = () => chatIsEmpty() && !!getEditor();
 
-  async function typeAndSend(text) {
+  // --- composer frame & bar mount - FIX الرئيسي ---
+  function composerFrame(){
     const ed = getEditor();
-    if (!ed) return false;
-    ed.focus();
-    try {
-      if (ed.value !== undefined) {
-        const proto = Object.getPrototypeOf(ed);
-        const desc = Object.getOwnPropertyDescriptor(proto, 'value') || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
-        if (desc && desc.set) desc.set.call(ed, text);
-        else ed.value = text;
-        ed.dispatchEvent(new Event('input', {bubbles:true}));
-        ed.dispatchEvent(new Event('change', {bubbles:true}));
-      } else {
-        ed.textContent = text;
-        ed.dispatchEvent(new Event('input', {bubbles:true}));
-      }
-    } catch(e) {
-      try { document.execCommand('insertText', false, text); } catch {}
+    if(!ed) return null;
+    // اطلع لفوق لحد ما تلاقي form او div كبير يحتوي الزر
+    let n = ed;
+    for(let i=0;i<10 && n && n.parentElement; i++){
+      if(n.tagName==="FORM") return n;
+      if(n.querySelector && n.querySelector(S.sendBtn)) return n;
+      n = n.parentElement;
     }
-    await sleep(150);
-    const btn = document.querySelector(S.sendBtn);
-    if (btn && btn.offsetParent !== null) { btn.click(); return true; }
-    // fallback Enter
-    ed.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', code:'Enter', keyCode:13, bubbles:true}));
+    return ed.parentElement?.parentElement || ed.parentElement || null;
+  }
+
+  function barMount(){
+    const ed = getEditor();
+    if(!ed) return null;
+    // دور على الحاوية اللي فيها المربع والزر
+    let frame = composerFrame();
+    if(!frame) frame = ed.parentElement;
+    if(!frame) return null;
+
+    // لو الحاوية هي نفسها textarea، اطلع واحد لفوق
+    if(frame===ed) frame = frame.parentElement;
+
+    // حاول تحط الشريط فوق المربع مباشرة، مو داخله عشان ما ينحجب
+    let parent = frame;
+    // اذا parent هو form، حط الشريط كأول child في الفورم
+    let before = parent.firstElementChild;
+    // تجنب انك تحط الشريط قبل نفسه
+    if(before && before.id==="zs-bar") before = before.nextElementSibling;
+    return { parent, before, inside: true }; // نفس شكل DeepSeek - داخل مربع الكتابة
+  }
+
+  function setInputLock(on){
+    const ed = getEditor();
+    if(!ed) return;
+    if(on){
+      if(!ed.dataset.zsPlaceholder) ed.dataset.zsPlaceholder = ed.getAttribute("placeholder")||"";
+      ed.setAttribute("readonly","");
+      ed.setAttribute("placeholder","⏳ Agent working… please wait");
+    }else{
+      ed.removeAttribute("readonly");
+      if(ed.dataset.zsPlaceholder!=null) ed.setAttribute("placeholder", ed.dataset.zsPlaceholder);
+    }
+  }
+
+  async function typeAndSend(text, images){
+    const editor = getEditor();
+    if(!editor) throw new Error("Use.AI input box not found - جرب تحدث الصفحة");
+    editor.focus();
+    setTextareaValue(editor, text);
+    await sleep(200);
+    // دور على زر الارسال
+    let btn = document.querySelector(S.sendBtn);
+    // لو ما لقيته، دور داخل الفريم
+    if(!btn){
+      const frame = composerFrame();
+      btn = frame ? frame.querySelector('button') : null;
+    }
+    if(btn){
+      btn.click();
+    }else{
+      // fallback: Enter
+      editor.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",code:"Enter",bubbles:true}));
+      editor.dispatchEvent(new KeyboardEvent("keyup",{key:"Enter",code:"Enter",bubbles:true}));
+    }
     return true;
   }
 
-  function stopGeneration() {
-    const btn = document.querySelector(S.stopBtn);
-    if (btn) btn.click();
-  }
-  function isGenerating() {
+  function isGenerating(){
     const stop = document.querySelector(S.stopBtn);
-    if (stop && stop.offsetParent !== null) return true;
-    if (document.querySelector(S.generating)) return true;
+    if(stop && visible(stop)) return true;
+    const gen = document.querySelector(S.generating);
+    if(gen && visible(gen)) return true;
     return false;
   }
-  const isBusyNow = () => false;
-  const isHardGenerating = () => isGenerating();
-  const genDebug = () => ({gen:isGenerating()});
-
-  const enforceComposer = () => {};
-  const ensureComposerReady = async () => true;
-  const turnHalted = () => false;
-  function findContinueBtn() { return [...document.querySelectorAll('button')].find(b => RE.continueBtn.test((b.textContent||'').trim())) || null; }
-  function clickContinueBtn() { const b = findContinueBtn(); if (b) b.click(); }
-
-  function scanError() {
+  function isBusyNow(){ return false; }
+  function isHardGenerating(){ return isGenerating(); }
+  function genDebug(){ return { gen: isGenerating() }; }
+  function enforceComposer(){ return { ready: true, expertOn: true, visionOn: true, searchOff: true }; }
+  async function ensureComposerReady(reason){ 
+    for(let i=0;i<20;i++){
+      if(getEditor()) return { ready: true, expertOn: true, visionOn: true, searchOff: true };
+      await sleep(200);
+    }
+    return { ready: !!getEditor(), expertOn: true, visionOn: true, searchOff: true };
+  }
+  function turnHalted(item){ return false; }
+  function findContinueBtn(){ 
+    return [...document.querySelectorAll("button")].find(b=> RE.continueBtn.test((b.innerText||"").trim())) || null;
+  }
+  function clickContinueBtn(btn){ if(btn) btn.click(); }
+  function scanError(){ 
     const el = document.querySelector(S.errorSurfaces);
-    return el ? el.textContent : '';
+    return el ? el.textContent : null;
   }
-  const isTooLongMsg = (t) => RE.tooLong.test(t) || RE.contextLimit.test(t);
-  const isBusyMsg = (t) => RE.busy.test(t);
-
-  const attachImages = async () => false;
-  const clearAttachments = () => {};
-  const conversationKey = () => location.href;
-
-  function installSendHooks(handlers) {
-    document.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+  function isTooLongMsg(text){ return RE.tooLong.test(text); }
+  function isBusyMsg(text){ return RE.busy.test(text); }
+  function stopGeneration(){
+    const btn = document.querySelector(S.stopBtn);
+    if(btn) btn.click();
+  }
+  function conversationKey(){ return location.pathname; }
+  function attachImages(){ return false; }
+  function clearAttachments(){ return true; }
+  function installSendHooks(handlers){
+    document.addEventListener("keydown",(e)=>{
+      if(e.key!=="Enter" || e.shiftKey || e.isComposing) return;
       const editor = getEditor();
-      if (!editor || !e.target.closest('form')) return;
-      if (handlers.isBlocked && handlers.isBlocked()) return;
-      if (!handlers.isStarted || !handlers.isStarted()) return;
-      handlers.onUserMessage && handlers.onUserMessage(assistantCount());
-    }, true);
-
-    document.addEventListener("click", (e) => {
+      if(!editor || !editor.contains(e.target)) return;
+      if(editorText().trim()==="") return;
+      if(handlers.isBlocked()) return;
+      if(!handlers.isStarted()){
+        if(!chatIsEmpty()) return;
+        handlers.onBlockedAttempt();
+        return;
+      }
+      handlers.onUserMessage(assistantCount());
+    },true);
+    document.addEventListener("click",(e)=>{
+      if(!getEditor()) return;
       const t = e.target;
+      const cont = t && t.closest && t.closest("button");
+      if(cont && RE.continueBtn.test((cont.innerText||"").trim())){
+        handlers.onNativeContinue();
+        return;
+      }
       const btn = t && t.closest && t.closest(S.sendBtn);
-      if (!btn) return;
-      if (handlers.isBlocked && handlers.isBlocked()) return;
-      if (!handlers.isStarted || !handlers.isStarted()) return;
-      handlers.onUserMessage && handlers.onUserMessage(assistantCount());
-    }, true);
+      if(!btn) return;
+      if(handlers.isBlocked()) return;
+      if(!handlers.isStarted()){
+        if(!chatIsEmpty()) return;
+        handlers.onBlockedAttempt();
+        return;
+      }
+      handlers.onUserMessage(assistantCount());
+    },true);
   }
-
-  function findToolBlockSpot(item, chip) {
-    // نبسطها: ندور ###LUA### ونخفيه فقط داخل الرد، مو كل الصفحة
-    if (!item) return null;
+  function findToolBlockSpot(item, chip){
+    const hasStart = (t) => t.includes("###lua###") || t.includes("###mcp_tool###") || /\{\s*"(?:command|tool)"\s*:/.test(t);
+    const hasEnd = (t) => t.includes("###end_lua###") || t.includes("###end_mcp_tool###");
     const containers = [...item.querySelectorAll(S.markdown)];
-    if (!containers.length) return null;
-    let parent = null, ref = null;
-    for (const container of containers) {
-      const kids = [...container.children];
-      for (const k of kids) {
-        if (k === chip) continue;
-        const txt = (k.textContent||'').toLowerCase();
-        if (txt.includes('###lua') || txt.includes('###mcp_tool')) {
-          k.classList.add('zs-tool-hide');
-          if (!ref) { parent = k.parentElement; ref = k; }
+    if(!containers.length) return null;
+    let parent=null, ref=null;
+    for(const container of containers){
+      const kids = [...container.children].filter(k=> k!==chip && !(chip && k.contains(chip)));
+      for(let i=0;i<kids.length;i++){
+        const txt = (kids[i].textContent||"").toLowerCase();
+        if(hasStart(txt)){
+          kids[i].classList.add("zs-tool-hide");
+          if(!ref && kids[i].parentElement){ parent=kids[i].parentElement; ref=kids[i]; }
         }
       }
     }
@@ -248,10 +329,10 @@ const ZSProvider = (() => {
   return {
     id: "useai",
     displayName: "Use.AI",
-    get supportsVision() { return true; },
+    get supportsVision(){ return true; },
     timings,
     thinkingSel: S.thinking,
-    init({ diag: d } = {}) { if (d) diag = d; try { document.documentElement.setAttribute("data-zs-useai-ver", "2026-08_v2_fixed"); } catch {} },
+    init({diag:d}={}){ if(d) diag=d; try{document.documentElement.setAttribute("data-zs-useai-ver","2026-08_useai_fix_v3_final");}catch{} },
     allItems, isUserItem, isAssistantItem, itemText, classifyText,
     assistantCount, userCount, lastAssistant, lastAssistantId, itemKey, readAssistant,
     streamLen, snapshot,
