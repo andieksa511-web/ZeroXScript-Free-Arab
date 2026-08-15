@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// providers/deepseek.js - the DeepSeek (chat.deepseek.com) provider.
+// providers/useai.js - the Use.AI (use.ai) provider.
 // EVERYTHING that knows DeepSeek's DOM, quirks, and UI strings lives here; the
 // core (core/main.js) only ever talks to the ZSProvider interface this file
 // exports. To support another AI site, write a sibling file exporting the same
@@ -27,33 +27,28 @@ const ZSProvider = (() => {
   // DOM selectors for chat.deepseek.com. Grouped so a future site tweak is a
   // one-liner. DeepSeek ships hashed CSS-module class names (e.g. `d29f3d7d`);
   // where possible we lean on its stable design-system "ds-" classes instead.
-  const S = {
-    chatItem: ".ds-message",
-    userMod: "d29f3d7d", // hashed modifier on user turns (one-liner to update if DeepSeek redeploys)
-    userBubble: ".fbb737a4", // user text bubble (secondary signal)
-    box: ".ds-markdown",
-    editor: "textarea", // DeepSeek uses a real <textarea>, NOT a contenteditable
-    // The inline "edit this message" box is DeepSeek's design-system bordered
-    // textarea (.ds-textarea--bordered), mounted UP in the turn list. The bottom
-    // composer is NOT wrapped in one - so this scopes getEditor() away from it.
-    msgEditBox: ".ds-textarea",
-    thinking: ".ds-think-content",
-    markdown: ".ds-markdown",
-    generating: ".ds-loading",
-    sendBtn: ".ds-button--primary",
-    stopBtn: ".ds-button--primary",
-    // surfaces where DeepSeek shows errors / limit modals / toasts
+    const S = {
+    // use.ai selectors - عامة وتشتغل على اغلب واجهات الشات الموحدة
+    // لو ما اشتغلت، افتح use.ai > F12 > Inspect وعدلها
+    chatItem: '[data-testid="message"], [data-message-id], [class*="message"], .group, [role="listitem"]',
+    userMod: '', // use.ai يعتمد على data-role
+    userBubble: '[data-role="user"], [data-author="user"], [class*="user"]',
+    box: '.markdown, .prose, [class*="markdown"], [data-role="assistant"]',
+    editor: 'textarea, div[contenteditable="true"][role="textbox"], [class*="composer"] textarea',
+    msgEditBox: 'textarea[data-editing="true"], .ds-textarea',
+    thinking: '[class*="think"], [class*="reasoning"], [data-thinking="true"], .ds-think-content',
+    markdown: '.markdown, .prose, [class*="markdown-body"], .ds-markdown, div[class*="content"]',
+    generating: '[class*="loading"], [class*="generating"], [aria-label*="Stop"], .ds-loading',
+    sendBtn: 'button[type="submit"], button[aria-label*="Send"], button:has(svg), .ds-button--primary',
+    stopBtn: 'button[aria-label*="Stop"], button:has([class*="stop"]), .ds-button--primary',
     errorSurfaces:
       '[class*="ds-toast"],[class*="toast"],[class*="error"],[class*="alert"],' +
       '[class*="warning"],[class*="modal"],[role="alert"]',
-    // composer image-attachment area (best-effort; DeepSeek's image support is
-    // limited, so the attach path degrades gracefully if these don't match).
     attachArea: ".ds-file-list, [class*='file-preview'], [class*='upload']",
     imageThumb: "[class*='thumbnail'], [class*='file-item']",
-    // ── Composer mode controls (empty chat only) ──────────────────────────
     modeRadioGroup: '[role="radiogroup"]',
     modeRadio: '[role="radio"]',
-    deepThinkToggle: ".ds-toggle-button",
+    deepThinkToggle: ".ds-toggle-button, [class*='think-toggle']",
   };
 
   // Error / state regexes (English + French - DeepSeek's UI follows the locale).
@@ -917,14 +912,14 @@ const ZSProvider = (() => {
   }
 
   return {
-    id: "deepseek",
-    displayName: "DeepSeek",
+    id: "useai",
+    displayName: "Use.AI",
     // DYNAMIC: DeepSeek's Instant/Expert models are text-only, but the V4 UI has a
     // dedicated "Vision" model tab. When the user selects Vision we honour it (see
     // enforceComposer) and this getter flips true, so main.js stops blocking
     // screen_capture and stops turning returned images into errors. Any other tab →
     // false. A getter so a mid-session tab switch is reflected immediately.
-    get supportsVision() { return isVisionSelected(); },
+    get supportsVision() { return true; },
     timings,
     // Reasoning-area selector, exported so the CORE's raw-command-visible
     // probes can exclude it: DeepSeek QUOTES the command JSON/###LUA### inside
@@ -937,7 +932,7 @@ const ZSProvider = (() => {
       // Version beacon: stamp the loaded build onto <html> so a reload can be
       // confirmed from the page (read document.documentElement.dataset.zsDsVer).
       // BUMP DS_VER on meaningful deepseek.js changes worth verifying live.
-      try { document.documentElement.setAttribute("data-zs-ds-ver", "2026-07_vision-badge-priority"); } catch {}
+      try { document.documentElement.setAttribute("data-zs-useai-ver", "2026-08_useai_v1"); } catch {}
     },
     // turns
     allItems, isUserItem, isAssistantItem, itemText, classifyText,
