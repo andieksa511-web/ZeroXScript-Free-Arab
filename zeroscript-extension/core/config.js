@@ -9,13 +9,13 @@ const ZS = (() => {
   // Display name + unique marker injected at the top of the system prompt so the
   // content script can reliably recognise (and camouflage) the bootstrap turn.
   const APP_NAME = "ZeroXScript";
-  const SYS_MARKER = "⟦ZS-SYS⟧";
+  const SYS_MARKER = "⟦ZXS-SYS⟧";
   // A re-statement of the system prompt mid-session (see withSysResend in
   // core/main.js). It carries SYS_MARKER TOO - that is what drives camouflage
   // and session detection, and neither should change - plus this second marker,
   // purely so the chip can say "Reminder" instead of inheriting the bootstrap's
   // "Starting Up". Same content, different label: a re-injection is not a start.
-  const RESEND_MARKER = "⟦ZS-RE⟧";
+  const RESEND_MARKER = "⟦ZXS-RE⟧";
 
   // ── Tool → visual category (icon + colour theme for the chips) ─────────
   // Roblox Studio MCP only. Returns one of:
@@ -58,7 +58,7 @@ const ZS = (() => {
           luaMalformed + ". You may add a short note around it. " +
           "Please retry.",
         unclosed:
-          "ERROR: your ZeroScript command was cut off before it finished - the JSON object" +
+          "ERROR: your ZeroXScript command was cut off before it finished - the JSON object" +
           objAlt + " never closed, so it could not run. Rewrite the WHOLE command in one " +
           'piece as valid JSON, exactly like {"command": "name", "params": {...}}' +
           luaUnclosed + ". Please retry.",
@@ -107,7 +107,7 @@ const ZS = (() => {
     // burns the whole conversation re-issuing commands that can never run. See
     // isContextInvalidated in core/main.js.
     staleExtension:
-      "ERROR: the ZeroScript extension was reloaded or updated while this page was open, so this " +
+      "ERROR: the ZeroXScript extension was reloaded or updated while this page was open, so this " +
       "tab is running a version of it that no longer exists and NO command can reach the user's " +
       "machine from here. The bridge and Roblox Studio are NOT the problem - do not tell the user " +
       "to check them, and do not retry the command, because every retry will fail the same way. " +
@@ -160,7 +160,7 @@ const ZS = (() => {
     const { siteName = "this AI site", customPrompt = "", providerNotes = "" } = opts;
 
     const prompt = `CONTEXT: the user has installed a browser extension called ZeroScript in their own browser. Here is how it works, so you can use it on their behalf:
-A browser extension (ZeroScript) is running inside this page. It watches your replies. When it detects a ZeroScript command in your text, it runs it against one or more connected MCP servers and sends the result back as the next message. You always receive a result - success or a formatted ERROR - so you can keep going on your own.
+A browser extension (ZeroXScript) is running inside this page. It watches your replies. When it detects a ZeroScript command in your text, it runs it against one or more connected MCP servers and sends the result back as the next message. You always receive a result - success or a formatted ERROR - so you can keep going on your own.
 
 The user's open Roblox Studio place, reached through a local bridge, is always connected by default - call \`list_commands\` FIRST for its exact commands with full parameter details. Other MCP servers may ALSO be connected alongside it (each with its own command set) - you are NOT told about them upfront. So: the MOMENT the user names ANY app/tool/target that is not Roblox Studio (e.g. "Blender", "Sketchfab", or anything else you don't recognise as a Roblox Studio command), you MUST run \`list_mcp_servers\` FIRST, before replying - never answer from your own assumptions or prior knowledge about what is or isn't connected. Only after checking may you tell the user something is unsupported. You do not need any special capability yourself - you just write text. The extension does the rest.
 
@@ -323,7 +323,7 @@ IMPORTANT: Your very first action is to write \`list_commands\` with no params (
       compactTools(tools);
     return (
       "\n\n────────────────────────────────\n" +
-      "(System note from ZeroScript - this is an automatic REMINDER, not a request and not a new result. " +
+      "(System note from ZeroXScript - this is an automatic REMINDER, not a request and not a new result. " +
       "Do NOT reply to it or run any command because of it; just keep it in mind for your next command.)\n" +
       "Reminder of the Roblox Studio commands (use exact names and parameter keys; " +
       "for other connected apps call list_mcp_servers):\n" +
